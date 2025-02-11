@@ -1,0 +1,5 @@
+apache-airflow-providers-amazon
+soda-core-redshift
+pendulum
+pandas
+boto3

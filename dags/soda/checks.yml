@@ -1,0 +1,166 @@
+checks for dim_province:
+
+  - schema:
+
+      fail:
+
+        when required column missing:
+          - province_id
+          - province_name
+          - latitude
+          - longitude
+
+        when wrong column type:
+          province_id: integer
+          province_name: character varying
+          latitude: numeric
+          longitude: numeric
+
+  - row_count = 77
+
+  - missing_count(province_id) = 0
+  - duplicate_count(province_id) = 0
+  - min(province_id) = 1
+  - max(province_id) = 77
+
+  - missing_count(province_name) = 0
+  - duplicate_count(province_name) = 0
+
+  - missing_count(latitude) = 0
+
+  - missing_count(longitude) = 0
+
+
+checks for dim_date:
+
+  - schema:
+  
+      fail:
+
+        when required column missing:
+          - date_key
+          - date
+          - year
+          - quarter
+          - month
+          - day
+          - day_of_week
+          - start_of_year
+          - start_of_quarter
+          - start_of_month
+
+        when wrong column type:
+          date_key: character varying
+          date: date
+          year: integer
+          quarter: integer
+          month: integer
+          day: integer
+          day_of_week: character varying
+          start_of_year: date
+          start_of_quarter: date
+          start_of_month: date
+
+  - missing_count(date_key) = 0
+  - duplicate_count(date_key) = 0
+  - min_length(date_key) = 8
+  - max_length(date_key) = 8
+
+  - missing_count(date) = 0
+  - duplicate_count(date) = 0
+
+  - missing_count(year) = 0
+
+  - missing_count(quarter) = 0
+  - min(quarter) >= 1
+  - max(quarter) <= 4
+
+  - missing_count(month) = 0
+  - min(month) >= 1
+  - max(month) <= 12
+
+  - missing_count(day) = 0
+  - min(day) >= 1
+  - max(day) <= 31
+
+  - missing_count(day_of_week) = 0
+  - min_length(day_of_week) = 3
+  - max_length(day_of_week) = 3
+  - invalid_count(day_of_week) = 0:
+      valid values: [Mon, Tue, Wed, Thu, Fri, Sat, Sun]
+
+  - missing_count(start_of_year) = 0
+
+  - missing_count(start_of_quarter) = 0
+
+  - missing_count(start_of_month) = 0
+
+
+checks for dim_time:
+
+  - schema:
+  
+      fail:
+
+        when required column missing:
+          - time_key
+          - hour
+
+        when wrong column type:
+          time_key: character varying
+          hour: integer
+
+  - missing_count(time_key) = 0
+  - duplicate_count(time_key) = 0
+  - min_length(time_key) = 2
+  - max_length(time_key) = 2
+
+  - missing_count(hour) = 0
+  - duplicate_count(hour) = 0
+  - min(hour) >= 0
+  - max(hour) <= 23
+
+
+checks for fact_air_quality:
+
+  - schema:
+  
+      fail:
+
+        when required column missing:
+          - record_id
+          - record_date
+          - record_time
+          - province_id
+          - pm2_5
+          - aqi
+
+        when wrong column type:
+          record_id: integer
+          record_date: character varying
+          record_time: character varying
+          province_id: integer
+          pm2_5: numeric
+          aqi: integer
+
+  - missing_count(record_id) = 0
+  - duplicate_count(record_id) = 0
+  - min(record_id) >= 1
+
+  - missing_count(record_date) = 0
+  - min_length(record_date) = 8
+  - max_length(record_date) = 8
+
+  - missing_count(record_time) = 0
+  - min_length(record_time) = 2
+  - max_length(record_time) = 2
+
+  - missing_count(province_id) = 0
+  - min(province_id) = 1
+  - max(province_id) = 77
+
+  - missing_count(pm2_5) = 0
+
+  - missing_count(aqi) = 0
+  - min(aqi) >= 0
+  - max(aqi) <= 500
