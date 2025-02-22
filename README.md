@@ -38,7 +38,7 @@ The project is designed to extract historical air pollution data of each provinc
 
 It structured as star schema, a dimensional data model, to leverage denormalized approach for read-optimized. Fact table contains PM2.5 concentration value and AQI, while dimension tables provide context in date, time and province.
 
-![data_warehouse_model](image/data_model.jpg)
+![data_warehouse_model](image/data_modeling.jpg)
 
 *Data Warehouse Model*
 
