@@ -71,7 +71,7 @@ def read_data(spark: SparkSession, schema: StructType, bucket: str, file: str) -
 
 def transform(spark: SparkSession, df_raw: DataFrame, province: str, start: str, end: str) -> DataFrame:
     """
-    Filter columns, fill null values and calculate rolling average in each province.
+    Filter columns, fill null values and calculate moving average in each province.
     
     Parameter:
         spark: Spark session.
@@ -118,10 +118,10 @@ def transform(spark: SparkSession, df_raw: DataFrame, province: str, start: str,
         'pm2_5': df_transformed.select(F.round(F.mean('pm2_5'), 1).astype('float')).collect()[0][0]
     })
     
-    # define window specification for 24-hour rolling window
+    # define window specification for 24-hour moving average
     windowSpec_24h = Window.orderBy('datetime').rowsBetween(-23, Window.currentRow)
 
-    # calculate the rolling average concentration
+    # calculate the moving average concentration
     df_transformed = df_transformed.withColumn('pm2_5_24h_avg', F.avg('pm2_5').over(windowSpec_24h).cast(DecimalType(10, 1)))
     
     return df_transformed
@@ -152,7 +152,7 @@ def create_breakpoints_df(spark: SparkSession, schema: StructType) -> DataFrame:
 
 def calculate_aqi(df_total: DataFrame, df_breakpoints: DataFrame) -> DataFrame:
     """
-    Calculate AQI value from pm2.5 24-hour rolling average concentration.
+    Calculate AQI value from pm2.5 24-hour moving average concentration.
     
     Parameter:
         df_total: Total dataframe containing air quality from all provinces.
