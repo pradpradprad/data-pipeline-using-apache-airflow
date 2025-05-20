@@ -2,8 +2,8 @@ from pyspark.sql import SparkSession, DataFrame
 from pyspark.sql import functions as F
 from pyspark.sql.window import Window
 from pyspark.sql.types import (
-    StructField, StructType, DecimalType, ArrayType, IntegerType,
-    LongType, TimestampType, DoubleType, StringType, DateType
+    StructField, StructType, DecimalType, ArrayType,
+    IntegerType, LongType, TimestampType, DoubleType, StringType
 )
 
 import sys
