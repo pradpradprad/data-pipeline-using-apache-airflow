@@ -30,7 +30,7 @@ The project is designed to extract historical air pollution data of each provinc
 
 8. **Access Control:** We use `AWS IAM` to manage access and permissions. Roles, policies and credentials are created to control permissions for accessing AWS services.
 
-![architecture](image/architecture.jpg)
+![architecture](docs/image/architecture.jpg)
 
 *Pipeline Architecture*
 
@@ -42,25 +42,29 @@ Transformation steps are divided into 3 parts:
 
     - **Read & Flatten:** Each province's data is loaded into Spark dataframe. We use `explode` function to flatten hourly data in the array column.
 
-    - **Data Cleaning:** Remove negative PM2.5 values. Identify missing records using `sequence` function in Spark SQL to list all hourly timestamp and left join with dataframe to show the missing records. Then we filled it with province's average.
-
-    - **Moving Average:** Calculated 24-hour moving average of PM2.5 value using `window function` for later AQI calculation.
-
     - **Aggregation:** Cleaned data from all provinces are appended into a single dataframe for further processing.
 
-2. **Calculate AQI:**
+2. **Clean Data:**
+
+    - **Anomalies:** Remove negative PM2.5 concentration values.
+
+    - **Missing Data:** Identify missing records using `sequence` function in Spark SQL to list all hourly timestamp and left join with dataframe to show the missing records. Then we filled it with province's average.
+
+3. **Calculate AQI:**
+
+    - **Moving Average:** Calculated 24-hour moving average of PM2.5 value using `window function` for later AQI calculation.
 
     - **Breakpoint Mapping:** We create breakpoint dataframe representing AQI ranges and crossjoin with cleaned data to identify the range for each concentration value.
 
     - **AQI Calculation:** AQI is calculated using [USA index scale](https://openweathermap.org/air-pollution-index-levels) and remove any duplicates after calculation.
 
-3. **Table Modeling:**
+4. **Table Modeling:**
 
     - **Modeling:** Data is filtered into specific structures: concentration and AQI for the fact table, extracted date/time components and distinct provinces with coordinates for dimension tables.
 
     - **Write:** Final tables are saved as Parquet files.
 
-![transformation](image/data_transformation.jpg)
+![transformation](docs/image/data_transformation.jpg)
 
 *Data Transformation*
 
@@ -68,7 +72,7 @@ Transformation steps are divided into 3 parts:
 
 Structured as star schema, a dimensional data model, to leverage denormalized approach for read-optimized. Fact table contains PM2.5 concentration value and AQI, while dimension tables provide context in date, time and province.
 
-![data_warehouse_model](image/data_modeling.jpg)
+![data_warehouse_model](docs/image/data_modeling.jpg)
 
 *Data Warehouse Model*
 
@@ -76,7 +80,7 @@ Structured as star schema, a dimensional data model, to leverage denormalized ap
 
 Tasks are organized by their respective roles.
 
-![pipeline_dag](image/pipeline_dag.jpg)
+![pipeline_dag](docs/image/pipeline_dag.jpg)
 
 *Pipeline DAG*
 
@@ -133,6 +137,6 @@ Full dashboard files located in `dashboard` folder
 
 - The Central and Northern regions experience higher pollution levels compared to other parts of the country, with Bangkok and its metropolitan area recording the highest AQI.
 
-![dashboard](image/dashboard.jpg)
+![dashboard](docs/image/dashboard.jpg)
 
 *Dashboard*

@@ -41,9 +41,28 @@ schema_transformed = StructType([
     StructField("latitude", DecimalType(10, 4), False),
     StructField("longitude", DecimalType(10, 4), False),
     StructField("province_name", StringType(), False),
-    StructField("pm2_5", DecimalType(10, 1), False),
-    StructField("pm2_5_24h_avg", DecimalType(10, 1), False)
+    StructField("pm2_5", DecimalType(10, 1), False)
 ])
+
+
+def create_session(app_name: str = 'Transformation') -> SparkSession:
+    """
+    Creates and returns a Spark session with the given application name.
+    
+    Parameter:
+        app_name: The name of the Spark application. Defaults to 'Transformation'.
+        
+    Return:
+        Active spark session.
+    """
+    
+    spark = SparkSession \
+        .builder \
+        .appName(app_name) \
+        .config('spark.sql.session.timeZone', 'Asia/Bangkok') \
+        .getOrCreate()
+    
+    return spark
 
 
 def read_data(spark: SparkSession, schema: StructType, bucket: str, file: str) -> DataFrame:
@@ -69,21 +88,18 @@ def read_data(spark: SparkSession, schema: StructType, bucket: str, file: str) -
     return df
 
 
-def transform(spark: SparkSession, df_raw: DataFrame, province: str, start: str, end: str) -> DataFrame:
+def transform_json(df_raw: DataFrame, province: str) -> DataFrame:
     """
-    Filter columns, fill null values and calculate moving average in each province.
+    Flatten JSON array into dataframe records.
     
     Parameter:
-        spark: Spark session.
         df_raw: Dataframe in raw format.
         province: Province name for current processing dataframe.
-        start: Start timestamp (yyyy-MM-dd HH:mm:ss) Bangkok timezone.
-        end: End timestamp (yyyy-MM-dd HH:mm:ss) Bangkok timezone.
-        
+
     Return:
-        Transformed dataframe.
+        Transformed dataframe for respective province.
     """
-    
+
     # expand to hourly record
     df_transformed = df_raw \
         .withColumn('record', F.explode(F.col('list'))) \
@@ -91,40 +107,94 @@ def transform(spark: SparkSession, df_raw: DataFrame, province: str, start: str,
     
     # filter columns
     df_transformed = df_transformed.select(
+        F.from_unixtime(F.col('record.dt')).cast(TimestampType()).alias('datetime'),
         F.col('coord.lat').alias('latitude'),
         F.col('coord.lon').alias('longitude'),
         F.col('province_name'),
-        F.from_unixtime(F.col('record.dt')).cast(TimestampType()).alias('datetime'),
         F.col('record.components.pm2_5').alias('pm2_5')
     )
-    
-    # drop negative value
-    df_transformed = df_transformed.filter(F.col('pm2_5') >= 0)
-    
-    # rounding to 1 decimal place
-    df_transformed = df_transformed.withColumn('pm2_5', F.round(F.col('pm2_5'), 1).cast(DecimalType(10, 1)))
-    
-    # create datetime range dataframe
-    df_datetime_range = spark.sql(f"select explode(sequence(timestamp('{start}'), timestamp('{end}'), interval 1 hour)) as datetime")
-    
-    # left join to get missing datetime records
-    df_transformed = df_datetime_range.join(df_transformed, how='left', on='datetime').orderBy('datetime')
-    
-    # fill null values
-    df_transformed = df_transformed.fillna({
-        'latitude': df_transformed.select(F.round(F.mean('latitude'), 4).astype('float')).collect()[0][0],
-        'longitude': df_transformed.select(F.round(F.mean('longitude'), 4).astype('float')).collect()[0][0],
-        'province_name': df_transformed.select(F.mode('province_name')).collect()[0][0],
-        'pm2_5': df_transformed.select(F.round(F.mean('pm2_5'), 1).astype('float')).collect()[0][0]
-    })
-    
-    # define window specification for 24-hour moving average
-    windowSpec_24h = Window.orderBy('datetime').rowsBetween(-23, Window.currentRow)
 
-    # calculate the moving average concentration
-    df_transformed = df_transformed.withColumn('pm2_5_24h_avg', F.avg('pm2_5').over(windowSpec_24h).cast(DecimalType(10, 1)))
-    
     return df_transformed
+
+
+def clean_data(df_total: DataFrame, start: str, end: str) -> DataFrame:
+    """
+    Identify and handle missing records.
+
+    Parameter:
+        df_total: Single dataframe that contains total data from all provinces.
+        start: Start timestamp (yyyy-MM-dd HH:mm:ss) Bangkok timezone.
+        end: End timestamp (yyyy-MM-dd HH:mm:ss) Bangkok timezone.
+
+    Return:
+        Cleaned dataframe
+    """
+
+    # drop negative value
+    df_total_cleaned = df_total.filter(F.col('pm2_5') >= 0)
+
+    # create timestamp range for each province
+    df_province = df_total_cleaned.select('province_name').distinct()
+
+    df_timestamp_range = df_province.withColumn(
+        'datetime',
+        F.explode(
+            F.sequence(
+                F.lit(start).cast(TimestampType()),
+                F.lit(end).cast(TimestampType()),
+                F.expr('interval 1 hour')
+            )
+        )
+    )
+
+    # show missing records by left join
+    df_total_cleaned = df_timestamp_range.join(df_total_cleaned, on=['province_name', 'datetime'], how='left')
+
+    # calculate avg and mode to fill null values
+    df_fill = df_total_cleaned.groupBy('province_name').agg(
+        F.avg('pm2_5').alias('avg_pm2_5'),
+        F.mode('latitude').alias('mode_latitude'),
+        F.mode('longitude').alias('mode_longitude')
+    )
+
+    # join and fill null values
+    df_total_cleaned = df_total_cleaned \
+        .join(df_fill, on='province_name', how='inner') \
+        .withColumn(
+            'latitude',
+            F.when(
+                F.col('latitude').isNotNull(),
+                F.col('latitude')
+            ).otherwise(F.col('mode_latitude'))
+        ) \
+        .withColumn(
+            'longitude',
+            F.when(
+                F.col('longitude').isNotNull(),
+                F.col('longitude')
+            ).otherwise(F.col('mode_longitude'))
+        ) \
+        .withColumn(
+            'pm2_5',
+            F.when(
+                F.col('pm2_5').isNotNull(),
+                F.col('pm2_5')
+            ).otherwise(F.col('avg_pm2_5'))
+        )
+
+    # rounding to 1 decimal place
+    df_total_cleaned = df_total_cleaned.withColumn('pm2_5', F.round(F.col('pm2_5'), 1).cast(DecimalType(10, 1)))
+
+    # filter columns
+    df_total_cleaned = df_total_cleaned.select(
+        'datetime',
+        'latitude',
+        'longitude',
+        'province_name',
+        'pm2_5'
+    )
+
+    return df_total_cleaned
 
 
 def create_breakpoints_df(spark: SparkSession, schema: StructType) -> DataFrame:
@@ -150,29 +220,35 @@ def create_breakpoints_df(spark: SparkSession, schema: StructType) -> DataFrame:
     ], schema=schema)
 
 
-def calculate_aqi(df_total: DataFrame, df_breakpoints: DataFrame) -> DataFrame:
+def calculate_aqi(df_total_cleaned: DataFrame, df_breakpoints: DataFrame) -> DataFrame:
     """
     Calculate AQI value from pm2.5 24-hour moving average concentration.
     
     Parameter:
-        df_total: Total dataframe containing air quality from all provinces.
+        df_total_cleaned: Cleaned single dataframe containing data from all provinces.
         df_breakpoints: Breakpoints dataframe.
         
     Return:
         Dataframe with AQI.
     """
-    
+
+    # define window specification for 24-hour moving average
+    window_24h = Window.partitionBy('province_name').orderBy('datetime').rowsBetween(-23, Window.currentRow)
+
+    # calculate the moving average concentration
+    df_aqi = df_total_cleaned.withColumn('pm2_5_24h_avg', F.avg('pm2_5').over(window_24h).cast(DecimalType(10, 1)))
+
     # crossjoin with breakpoint dataframe to get all breakpoint ranges
-    df_aqi = df_total.join(F.broadcast(df_breakpoints), how='cross')
-    
+    df_aqi = df_aqi.join(df_breakpoints, how='cross')
+
     # query only records that pm2.5 concentration fall within their breakpoint range
     df_aqi = df_aqi.filter(
         (F.col('pm2_5_24h_avg').between(F.col('c_low'), F.col('c_high'))) | (F.col('pm2_5_24h_avg') > 500.4)
     )
-    
+
     # define equation
     aqi_equation = ((F.col('i_high') - F.col('i_low')) / (F.col('c_high') - F.col('c_low'))) * (F.col('pm2_5_24h_avg') - F.col('c_low')) + F.col('i_low')
-    
+
     # calculate AQI from equation
     # for records where concentration exceed 500.4 μg/m3 will be assigned with maximum AQI of 500
     df_aqi = df_aqi.withColumn(
@@ -180,11 +256,12 @@ def calculate_aqi(df_total: DataFrame, df_breakpoints: DataFrame) -> DataFrame:
         F.when(
             F.col('pm2_5_24h_avg') <= 500.4,
             F.round(aqi_equation, 0).cast(IntegerType())
-        ).otherwise(500))
-    
+        ).otherwise(500)
+    )
+
     # drop any duplicates
     df_aqi = df_aqi.dropDuplicates(subset=['datetime', 'province_name'])
-    
+
     # filter columns
     df_aqi = df_aqi.select(
         'datetime',
@@ -281,7 +358,7 @@ def create_fact_air_quality(df_aqi: DataFrame, df_dim_province: DataFrame) -> Da
     """
     
     # join with dim_province to get province_id
-    df_fact_air_quality = df_aqi.join(F.broadcast(df_dim_province), on='province_name', how='inner')
+    df_fact_air_quality = df_aqi.join(df_dim_province, on='province_name', how='inner')
     
     # filter columns
     df_fact_air_quality = df_fact_air_quality.select(
@@ -332,11 +409,7 @@ def main():
     try:
         # create spark session
         logging.info('Creating spark session.')
-        spark = SparkSession \
-            .builder \
-            .appName('Transformation') \
-            .config('spark.sql.session.timeZone', 'Asia/Bangkok') \
-            .getOrCreate()
+        spark = create_session()
 
         # empty dataframe to collect data from all provinces
         df_total = spark.createDataFrame([], schema_transformed)
@@ -348,17 +421,20 @@ def main():
             
             # read raw data and transform
             df_raw = read_data(spark, schema_raw, raw_bucket, province)
-            df_transformed = transform(spark, df_raw, province, start_datetime, end_datetime)
-            
+            df_transformed = transform_json(df_raw, province)
+
             # append transformed data into main dataframe
             df_total = df_total.union(df_transformed)
+
+        # data cleaning by handle missing records
+        df_total_cleaned = clean_data(df_total, start_datetime, end_datetime)
 
         # create breakpoints dataframe to calculate AQI
         df_breakpoints = create_breakpoints_df(spark, schema_breakpoints)
 
         # calculate AQI
         logging.info('Calculating AQI.')
-        df_aqi = calculate_aqi(df_total, df_breakpoints)
+        df_aqi = calculate_aqi(df_total_cleaned, df_breakpoints)
 
         # create fact and dimension table dataframes
         logging.info('Creating fact and dimension tables.')
