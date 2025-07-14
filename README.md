@@ -129,7 +129,7 @@ After finished all AWS services setup, modify `.env` file with your own credenti
 
 ## 📊 Dashboard Summary
 
-Full dashboard files located in `dashboard` folder
+Full dashboard files located in `dashboard` folder.
 
 - PM2.5 air pollution peaks in winter, with December, January and February being the most polluted months.
 

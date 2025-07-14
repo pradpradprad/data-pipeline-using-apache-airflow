@@ -8,7 +8,6 @@ from pyspark.sql.types import (
 
 import sys
 import logging
-from typing import Union
 
 
 # setting log level
@@ -30,18 +29,18 @@ schema_raw = StructType([
 ])
 
 schema_breakpoints = StructType([
-    StructField("c_low", DoubleType(), False),
-    StructField("c_high", DoubleType(), False),
-    StructField("i_low", IntegerType(), False),
-    StructField("i_high", IntegerType(), False)
+    StructField('c_low', DoubleType(), False),
+    StructField('c_high', DoubleType(), False),
+    StructField('i_low', IntegerType(), False),
+    StructField('i_high', IntegerType(), False)
 ])
 
 schema_transformed = StructType([
-    StructField("datetime", TimestampType(), False),
-    StructField("latitude", DecimalType(10, 4), False),
-    StructField("longitude", DecimalType(10, 4), False),
-    StructField("province_name", StringType(), False),
-    StructField("pm2_5", DecimalType(10, 1), False)
+    StructField('datetime', TimestampType(), False),
+    StructField('latitude', DecimalType(10, 4), False),
+    StructField('longitude', DecimalType(10, 4), False),
+    StructField('province_name', StringType(), False),
+    StructField('pm2_5', DecimalType(10, 1), False)
 ])
 
 
@@ -392,7 +391,16 @@ def write_data(df: DataFrame, bucket: str, output_dir: str) -> None:
         .save(f's3://{bucket}/{output_dir}/')
 
 
-def main():
+def main() -> None:
+    """
+    Main function to transform raw data.
+
+    Parameter:
+        None.
+
+    Return:
+        None.
+    """
 
     # check for command line arguments
     if len(sys.argv) != 6:
